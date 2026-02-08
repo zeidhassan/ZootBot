@@ -1,5 +1,5 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits } = require('discord.js');
+const { Client, GatewayIntentBits, Collection } = require('discord.js');
 
 const client = new Client({
   intents: [
@@ -9,16 +9,9 @@ const client = new Client({
   ],
 });
 
-client.once('ready', () => {
-  console.log(`Logged in as ${client.user.tag}`);
-});
+client.commands = new Collection();
 
-client.on('messageCreate', (message) => {
-  if (message.author.bot) return;
-
-  if (message.content === '!ping') {
-    message.reply('pong');
-  }
-});
+require('./handlers/eventHandler')(client);
+require('./handlers/commandHandler')(client);
 
 client.login(process.env.DISCORD_TOKEN);
