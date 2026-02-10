@@ -7,6 +7,7 @@ const {
   MessageFlags,
   ChannelType,
 } = require('discord.js');
+const { logCommand } = require('../utils/logging');
 
 const MODAL_CUSTOM_ID_PREFIX = 'sayModal:';
 const MODAL_INPUT_ID = 'sayMessage';
@@ -26,6 +27,11 @@ module.exports = {
 
   async execute(interaction) {
     if (!interaction.guild) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'say',
+        details: 'Command used outside a server',
+      });
       return interaction.reply({
         content: 'This command can only be used in a server.',
         flags: MessageFlags.Ephemeral,
@@ -33,6 +39,11 @@ module.exports = {
     }
 
     if (!interaction.member.roles.cache.some(role => ALLOWED_ROLE_IDS.includes(role.id))) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'say',
+        details: 'User lacks permission',
+      });
       return interaction.reply({
         content: 'You do not have permission to use this command.',
         flags: MessageFlags.Ephemeral,
@@ -41,6 +52,11 @@ module.exports = {
 
     const channel = interaction.options.getChannel('channel', true);
     if (!channel.isTextBased()) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'say',
+        details: 'Selected channel not text-based',
+      });
       return interaction.reply({
         content: 'Please select a text-based channel.',
         flags: MessageFlags.Ephemeral,
@@ -69,6 +85,11 @@ module.exports = {
 
   async handleModal(interaction) {
     if (!interaction.guild) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'say modal',
+        details: 'Modal used outside a server',
+      });
       return interaction.reply({
         content: 'This command can only be used in a server.',
         flags: MessageFlags.Ephemeral,
@@ -76,6 +97,11 @@ module.exports = {
     }
 
     if (!interaction.member.roles.cache.some(role => ALLOWED_ROLE_IDS.includes(role.id))) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'say modal',
+        details: 'User lacks permission',
+      });
       return interaction.reply({
         content: 'You do not have permission to use this command.',
         flags: MessageFlags.Ephemeral,
@@ -84,6 +110,11 @@ module.exports = {
 
     const channelId = interaction.customId.slice(MODAL_CUSTOM_ID_PREFIX.length);
     if (!channelId) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'say modal',
+        details: 'Missing channel id in modal',
+      });
       return interaction.reply({
         content: 'I could not determine which channel to use.',
         flags: MessageFlags.Ephemeral,
@@ -94,6 +125,11 @@ module.exports = {
     const channel = await interaction.guild.channels.fetch(channelId);
 
     if (!channel || !channel.isTextBased()) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'say',
+        details: 'Channel not available or not text-based',
+      });
       return interaction.reply({
         content: 'That channel is not available or not text-based.',
         flags: MessageFlags.Ephemeral,
@@ -102,6 +138,11 @@ module.exports = {
 
     await channel.send({ content: message });
 
+    await logCommand(interaction, {
+      status: 'SUCCESS',
+      action: 'say',
+      details: `Sent message in #${channel.name}`,
+    });
     return interaction.reply({
       content: `Message sent in #${channel.name}.`,
       flags: MessageFlags.Ephemeral,

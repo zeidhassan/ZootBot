@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, MessageFlags } = require('discord.js');
+const { logCommand } = require('../utils/logging');
 
 const ALLOWED_ROLE_IDS = ['1456273602264563722', '1456538179757670420'];
 const DEFAULT_DELETE_COUNT = 1000;
@@ -19,6 +20,11 @@ module.exports = {
 
   async execute(interaction) {
     if (!interaction.guild) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'clear',
+        details: 'Command used outside a server',
+      });
       return interaction.reply({
         content: 'This command can only be used in a server.',
         flags: MessageFlags.Ephemeral,
@@ -26,6 +32,11 @@ module.exports = {
     }
 
     if (!interaction.member.roles.cache.some(role => ALLOWED_ROLE_IDS.includes(role.id))) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'clear',
+        details: 'User lacks permission',
+      });
       return interaction.reply({
         content: 'You do not have permission to use this command.',
         flags: MessageFlags.Ephemeral,
@@ -34,6 +45,11 @@ module.exports = {
 
     const channel = interaction.channel;
     if (!channel || !channel.isTextBased() || typeof channel.bulkDelete !== 'function') {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'clear',
+        details: 'Command used outside a text channel',
+      });
       return interaction.reply({
         content: 'Please run this command in a text channel.',
         flags: MessageFlags.Ephemeral,
@@ -65,6 +81,11 @@ module.exports = {
           break;
         }
         console.error('Failed to bulk delete messages:', err);
+        await logCommand(interaction, {
+          status: 'FAILURE',
+          action: 'clear',
+          details: 'Bulk delete failed',
+        });
         return interaction.editReply('Something broke while clearing messages.');
       }
 
@@ -132,6 +153,11 @@ module.exports = {
           }.`
         : '';
 
+    await logCommand(interaction, {
+      status: 'SUCCESS',
+      action: 'clear',
+      details: `Cleared ${deletedTotal} message${deletedTotal === 1 ? '' : 's'} in #${channel.name}`,
+    });
     return interaction.editReply(
       `Cleared ${deletedTotal} message${deletedTotal === 1 ? '' : 's'} in #${channel.name}.${ageNote}${skippedNote}`
     );

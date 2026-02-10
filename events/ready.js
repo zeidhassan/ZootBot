@@ -13,6 +13,10 @@ module.exports = {
     }
 
     const { startStatusStream } = require('../utils/exarotonStatus');
+    console.log('Starting exaroton status stream...');
+    const DEBUG =
+      typeof process.env.EXAROTON_DEBUG === 'string' &&
+      process.env.EXAROTON_DEBUG.trim().toLowerCase() === 'true';
 
     const ANNOUNCE_DEDUPE_MS = 6000;
     const RECENT_EVENT_TTL_MS = 12000;
@@ -212,6 +216,12 @@ module.exports = {
         const joinLeave = extractJoinLeave(line);
         const chat = extractChat(line);
         if (!chat) return;
+        if (joinLeave) {
+          console.log(`Player ${joinLeave.type}: ${joinLeave.player}`);
+        }
+        if (DEBUG) {
+          console.log(`Live chat MC->Discord from ${chat.player}: ${chat.message}`);
+        }
         const channel = await getChannel(consoleChannelId);
         if (!channel) return;
         try {

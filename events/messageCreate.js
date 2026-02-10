@@ -2,6 +2,9 @@ const LIVE_CHAT_COOLDOWN_MS = 1500;
 const MAX_MESSAGE_LENGTH = 200;
 const MAX_NAME_LENGTH = 32;
 const recentMessages = new Map();
+const DEBUG =
+  typeof process.env.EXAROTON_DEBUG === 'string' &&
+  process.env.EXAROTON_DEBUG.trim().toLowerCase() === 'true';
 
 function cleanupCooldowns() {
   const now = Date.now();
@@ -56,6 +59,11 @@ module.exports = {
 
     const command = `say [Discord] ${displayName}: ${content}`;
     const ok = stream.sendConsoleCommand(command);
+    if (DEBUG) {
+      console.log(
+        `Live chat ${ok ? 'sent' : 'failed'} Discord->MC from ${displayName} (${message.author?.id || 'unknown'}): ${content}`
+      );
+    }
     if (!ok) {
       try {
         const reply = await message.reply({

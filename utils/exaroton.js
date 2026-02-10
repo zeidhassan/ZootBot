@@ -2,6 +2,9 @@ const https = require('https');
 
 const API_HOST = 'api.exaroton.com';
 const API_PREFIX = '/v1';
+const DEBUG =
+  typeof process.env.EXAROTON_DEBUG === 'string' &&
+  process.env.EXAROTON_DEBUG.trim().toLowerCase() === 'true';
 
 function readEnv(name) {
   const value = process.env[name];
@@ -14,6 +17,10 @@ function request(method, path, { token, body } = {}) {
     if (!token) {
       reject(new Error('Missing exaroton API token.'));
       return;
+    }
+
+    if (DEBUG) {
+      console.log(`exaroton request: ${method} ${API_PREFIX}${path}`);
     }
 
     const payload = body ? JSON.stringify(body) : null;
@@ -39,6 +46,9 @@ function request(method, path, { token, body } = {}) {
       res.on('end', () => {
         try {
           const json = data ? JSON.parse(data) : null;
+          if (DEBUG) {
+            console.log(`exaroton response: ${res.statusCode} ${method} ${API_PREFIX}${path}`);
+          }
           resolve({ status: res.statusCode, data: json });
         } catch (err) {
           reject(err);

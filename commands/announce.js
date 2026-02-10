@@ -6,6 +6,7 @@ const {
   ActionRowBuilder,
   MessageFlags,
 } = require('discord.js');
+const { logCommand } = require('../utils/logging');
 
 const ANNOUNCEMENTS_CHANNEL_NAME = 'announcements🔊';
 const ANNOUNCEMENT_ROLE_NAME = 'announcement';
@@ -21,6 +22,11 @@ module.exports = {
 
   async execute(interaction) {
     if (!interaction.guild) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'announce',
+        details: 'Command used outside a server',
+      });
       return interaction.reply({
         content: 'This command can only be used in a server.',
         flags: MessageFlags.Ephemeral,
@@ -28,6 +34,11 @@ module.exports = {
     }
 
     if (!interaction.member.roles.cache.some(role => ALLOWED_ROLE_IDS.includes(role.id))) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'announce',
+        details: 'User lacks permission',
+      });
       return interaction.reply({
         content: 'You do not have permission to use this command.',
         flags: MessageFlags.Ephemeral,
@@ -56,6 +67,11 @@ module.exports = {
 
   async handleModal(interaction) {
     if (!interaction.guild) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'announce modal',
+        details: 'Modal used outside a server',
+      });
       return interaction.reply({
         content: 'This command can only be used in a server.',
         flags: MessageFlags.Ephemeral,
@@ -63,6 +79,11 @@ module.exports = {
     }
 
     if (!interaction.member.roles.cache.some(role => ALLOWED_ROLE_IDS.includes(role.id))) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'announce modal',
+        details: 'User lacks permission',
+      });
       return interaction.reply({
         content: 'You do not have permission to use this command.',
         flags: MessageFlags.Ephemeral,
@@ -73,6 +94,11 @@ module.exports = {
     const role = interaction.guild.roles.cache.find(r => r.name === ANNOUNCEMENT_ROLE_NAME);
 
     if (!role) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'announce',
+        details: `Role not found: ${ANNOUNCEMENT_ROLE_NAME}`,
+      });
       return interaction.reply({
         content: `Role "${ANNOUNCEMENT_ROLE_NAME}" not found.`,
         flags: MessageFlags.Ephemeral,
@@ -88,6 +114,11 @@ module.exports = {
     );
 
     if (!channel) {
+      await logCommand(interaction, {
+        status: 'FAILURE',
+        action: 'announce',
+        details: `Channel not found: ${ANNOUNCEMENTS_CHANNEL_NAME}`,
+      });
       return interaction.reply({
         content: `I couldn't find a text channel named "${ANNOUNCEMENTS_CHANNEL_NAME}".`,
         flags: MessageFlags.Ephemeral,
@@ -96,6 +127,11 @@ module.exports = {
 
     await channel.send({ content: fullMessage });
 
+    await logCommand(interaction, {
+      status: 'SUCCESS',
+      action: 'announce',
+      details: `Sent announcement in #${ANNOUNCEMENTS_CHANNEL_NAME}`,
+    });
     return interaction.reply({
       content: `Announcement sent in #${ANNOUNCEMENTS_CHANNEL_NAME}.`,
       flags: MessageFlags.Ephemeral,

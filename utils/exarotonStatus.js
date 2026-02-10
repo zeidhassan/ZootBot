@@ -1,6 +1,9 @@
 const WebSocket = require('ws');
 
 const API_HOST = 'api.exaroton.com';
+const DEBUG =
+  typeof process.env.EXAROTON_DEBUG === 'string' &&
+  process.env.EXAROTON_DEBUG.trim().toLowerCase() === 'true';
 
 function readEnv(name) {
   const value = process.env[name];
@@ -20,14 +23,18 @@ function createStatusStream({
   enableConsole = false,
   onLog,
   onError,
+  heartbeatIntervalMs = 15000,
+  staleTimeoutMs = 90000,
 } = {}) {
   let socket = null;
   let closed = false;
   let reconnectTimer = null;
+  let heartbeatTimer = null;
   let ready = false;
   let reconnectAttempts = 0;
   let consoleRequested = false;
   let serverConnected = false;
+  let lastMessageAt = 0;
   const pendingMessages = [];
 
   const log = message => {
@@ -45,6 +52,36 @@ function createStatusStream({
     } catch (err) {
       onError?.(err);
     }
+  };
+
+  const markMessage = () => {
+    lastMessageAt = Date.now();
+  };
+
+  const startHeartbeat = () => {
+    if (heartbeatTimer) return;
+    if (!heartbeatIntervalMs || !staleTimeoutMs) return;
+    heartbeatTimer = setInterval(() => {
+      if (closed) return;
+      if (!socket) return;
+      if (!ready) return;
+      if (!lastMessageAt) return;
+      const age = Date.now() - lastMessageAt;
+      if (age > staleTimeoutMs) {
+        log(`exaroton websocket stale for ${Math.round(age / 1000)}s; reconnecting`);
+        try {
+          socket.close();
+        } catch (err) {
+          onError?.(err);
+        }
+      }
+    }, heartbeatIntervalMs);
+  };
+
+  const stopHeartbeat = () => {
+    if (!heartbeatTimer) return;
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
   };
 
   const startConsoleStream = () => {
@@ -84,6 +121,9 @@ function createStatusStream({
       return;
     }
 
+    if (DEBUG) {
+      console.log(`exaroton websocket connecting to server ${serverId}`);
+    }
     const url = buildWebsocketUrl(serverId);
     socket = new WebSocket(url, {
       headers: {
@@ -95,7 +135,9 @@ function createStatusStream({
       ready = false;
       serverConnected = false;
       consoleRequested = false;
+      lastMessageAt = Date.now();
       log('exaroton websocket connected');
+      startHeartbeat();
     });
 
     socket.on('message', data => {
@@ -105,6 +147,8 @@ function createStatusStream({
       } catch {
         return;
       }
+
+      markMessage();
 
       if (message?.type === 'ready') {
         ready = true;
@@ -157,10 +201,17 @@ function createStatusStream({
       serverConnected = false;
       consoleRequested = false;
       socket = null;
+      if (DEBUG) {
+        console.log('exaroton websocket closed');
+      }
+      stopHeartbeat();
       scheduleReconnect();
     });
 
     socket.on('error', err => {
+      if (DEBUG) {
+        console.log('exaroton websocket error');
+      }
       onError?.(err);
     });
   };
@@ -171,6 +222,7 @@ function createStatusStream({
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    stopHeartbeat();
     if (socket) {
       socket.close();
       socket = null;
