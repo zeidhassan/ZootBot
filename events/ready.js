@@ -1,3 +1,21 @@
+const { EmbedBuilder } = require('discord.js');
+
+const STATUS_LABELS = new Map([
+  [0, 'offline'],
+  [1, 'online'],
+  [2, 'starting'],
+  [3, 'stopping'],
+  [4, 'restarting'],
+  [5, 'saving'],
+  [6, 'loading'],
+  [7, 'crashed'],
+  [8, 'pending'],
+  [9, 'transferring'],
+  [10, 'preparing'],
+]);
+
+const STATUS_EMBED_TITLE = 'Server Status';
+
 module.exports = {
   name: 'clientReady',
   execute(client) {
@@ -18,17 +36,17 @@ module.exports = {
       typeof process.env.EXAROTON_DEBUG === 'string' &&
       process.env.EXAROTON_DEBUG.trim().toLowerCase() === 'true';
 
-    const ANNOUNCE_DEDUPE_MS = 6000;
-    const RECENT_EVENT_TTL_MS = 12000;
     const statusState = {
       players: null,
       lastStatusAt: 0,
       lastCount: null,
       lastMax: null,
-      lastAnnouncementSignature: null,
-      lastAnnouncementAt: 0,
+      lastStatusCode: null,
+      lastAddress: null,
+      lastPlayersList: [],
+      statusMessageId: null,
+      embedUpdateInFlight: null,
     };
-    const recentAnnouncements = new Map();
     const channelCache = new Map();
 
     const normalizePlayerName = player => {
@@ -57,27 +75,6 @@ module.exports = {
         ? value.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '')
         : value;
 
-    const cleanupRecent = (map, ttlMs) => {
-      const now = Date.now();
-      for (const [key, timestamp] of map) {
-        if (now - timestamp > ttlMs) {
-          map.delete(key);
-        }
-      }
-    };
-
-    const markAnnounced = (type, player) => {
-      cleanupRecent(recentAnnouncements, RECENT_EVENT_TTL_MS);
-      recentAnnouncements.set(`${type}:${player}`, Date.now());
-    };
-
-    const wasAnnouncedRecently = (type, player) => {
-      cleanupRecent(recentAnnouncements, RECENT_EVENT_TTL_MS);
-      const timestamp = recentAnnouncements.get(`${type}:${player}`);
-      if (!timestamp) return false;
-      return Date.now() - timestamp < ANNOUNCE_DEDUPE_MS;
-    };
-
     const getCountLabel = () => {
       const count =
         statusState.players && typeof statusState.players.size === 'number'
@@ -90,6 +87,106 @@ module.exports = {
         return `${count}${typeof max === 'number' ? `/${max}` : ''}`;
       }
       return 'unknown';
+    };
+
+    const getStatusLabel = () => {
+      const status = statusState.lastStatusCode;
+      return STATUS_LABELS.get(status) || `unknown (${status ?? 'n/a'})`;
+    };
+
+    const getStatusColor = () => {
+      const status = statusState.lastStatusCode;
+      if (status === 1) return 0x2ecc71; // online
+      if (status === 2) return 0xf1c40f; // starting
+      if (status === 3) return 0xe67e22; // stopping
+      if (status === 4) return 0x9b59b6; // restarting
+      if (status === 7) return 0xe74c3c; // crashed
+      return 0x95a5a6; // neutral
+    };
+
+    const buildPlayersValue = () => {
+      const countLabel = getCountLabel();
+      const names = Array.isArray(statusState.lastPlayersList)
+        ? statusState.lastPlayersList
+        : [];
+      if (names.length === 0) return `${countLabel}\nNone`;
+      let list = names.join(', ');
+      if (list.length > 1000) {
+        list = `${list.slice(0, 997)}...`;
+      }
+      return `${countLabel}\n${list}`;
+    };
+
+    const buildStatusEmbed = () =>
+      new EmbedBuilder()
+        .setTitle(STATUS_EMBED_TITLE)
+        .setColor(getStatusColor())
+        .addFields(
+          { name: 'Status', value: getStatusLabel(), inline: true },
+          { name: 'Players', value: buildPlayersValue(), inline: false },
+          {
+            name: 'Address',
+            value: statusState.lastAddress || 'unknown',
+            inline: true,
+          }
+        )
+        .setTimestamp(new Date());
+
+    const findStatusMessage = async channel => {
+      if (!channel || !channel.isTextBased()) return null;
+      if (statusState.statusMessageId) {
+        try {
+          const message = await channel.messages.fetch(statusState.statusMessageId);
+          if (message) return message;
+        } catch {
+          statusState.statusMessageId = null;
+        }
+      }
+      try {
+        const recent = await channel.messages.fetch({ limit: 50 });
+        const existing = recent.find(
+          msg =>
+            msg.author?.id === client.user.id &&
+            Array.isArray(msg.embeds) &&
+            msg.embeds[0]?.title === STATUS_EMBED_TITLE
+        );
+        if (existing) {
+          statusState.statusMessageId = existing.id;
+          return existing;
+        }
+      } catch (err) {
+        console.error('Failed to find status embed message:', err);
+      }
+      return null;
+    };
+
+    const upsertStatusEmbed = async () => {
+      if (!channelId) return;
+      if (statusState.embedUpdateInFlight) {
+        await statusState.embedUpdateInFlight;
+        return;
+      }
+      const channel = await getChannel(channelId);
+      if (!channel) return;
+      const embed = buildStatusEmbed();
+      const existing = await findStatusMessage(channel);
+      statusState.embedUpdateInFlight = (async () => {
+        try {
+          if (existing) {
+            console.log('Updating status embed message.');
+            await existing.edit({ embeds: [embed] });
+          } else {
+            console.log('Creating status embed message.');
+            const sent = await channel.send({ embeds: [embed] });
+            statusState.statusMessageId = sent.id;
+          }
+        } catch (err) {
+          console.error('Failed to update status embed:', err);
+        } finally {
+          statusState.embedUpdateInFlight = null;
+        }
+      })();
+      await statusState.embedUpdateInFlight;
     };
 
     const extractJoinLeave = line => {
@@ -133,80 +230,44 @@ module.exports = {
       return { player, message };
     };
 
-    const announceRosterChange = async ({ joined = [], left = [] } = {}) => {
-      const filteredJoined = joined.filter(Boolean);
-      const filteredLeft = left.filter(Boolean);
-      if (filteredJoined.length === 0 && filteredLeft.length === 0) return;
-
-      const channel = await getChannel(channelId);
-      if (!channel) return;
-
-      const countLabel = getCountLabel();
-      const announcementSignature = `${filteredJoined
-        .slice()
-        .sort()
-        .join(',')}|${filteredLeft.slice().sort().join(',')}|${countLabel}`;
-      const now = Date.now();
-      if (
-        statusState.lastAnnouncementSignature === announcementSignature &&
-        now - statusState.lastAnnouncementAt < ANNOUNCE_DEDUPE_MS
-      ) {
-        return;
-      }
-
-      const lines = [];
-      filteredJoined.forEach(name => lines.push(`• ${name} joined`));
-      filteredLeft.forEach(name => lines.push(`• ${name} left`));
-      lines.push(`Players: ${countLabel}`);
-
-      try {
-        await channel.send({ content: lines.join('\n') });
-        filteredJoined.forEach(name => markAnnounced('join', name));
-        filteredLeft.forEach(name => markAnnounced('leave', name));
-        statusState.lastAnnouncementSignature = announcementSignature;
-        statusState.lastAnnouncementAt = now;
-      } catch (err) {
-        console.error('Failed to send status update:', err);
-      }
-    };
-
     const handleStatus = async data => {
       if (!channelId) return;
-      if (!Array.isArray(data?.players?.list)) return;
-
-      const players = data.players.list;
-      const names = players.map(normalizePlayerName).filter(Boolean);
-      const uniqueNames = Array.from(new Set(names));
-      const currentPlayers = new Set(uniqueNames);
-
-      if (typeof data?.players?.count === 'number') {
-        statusState.lastCount = data.players.count;
+      if (typeof data?.status === 'number') {
+        statusState.lastStatusCode = data.status;
       }
-      if (typeof data?.players?.max === 'number') {
-        statusState.lastMax = data.players.max;
-      }
-      statusState.lastStatusAt = Date.now();
 
-      if (!statusState.players) {
+      if (typeof data?.address === 'string') {
+        statusState.lastAddress = data.address;
+      }
+
+      if (Array.isArray(data?.players?.list)) {
+        const players = data.players.list;
+        const names = players.map(normalizePlayerName).filter(Boolean);
+        const uniqueNames = Array.from(new Set(names));
+        const currentPlayers = new Set(uniqueNames);
+
+        if (typeof data?.players?.count === 'number') {
+          statusState.lastCount = data.players.count;
+        }
+        if (typeof data?.players?.max === 'number') {
+          statusState.lastMax = data.players.max;
+        }
+        statusState.lastStatusAt = Date.now();
+        statusState.lastPlayersList = uniqueNames;
+
+        if (!statusState.players) {
+          statusState.players = currentPlayers;
+          await upsertStatusEmbed();
+          return;
+        }
+
         statusState.players = currentPlayers;
+
+        await upsertStatusEmbed();
         return;
       }
 
-      let joined = uniqueNames.filter(name => !statusState.players.has(name));
-      let left = Array.from(statusState.players).filter(
-        name => !currentPlayers.has(name)
-      );
-
-      joined = joined.filter(name => !wasAnnouncedRecently('join', name));
-      left = left.filter(name => !wasAnnouncedRecently('leave', name));
-
-      statusState.players = currentPlayers;
-
-      if (joined.length === 0 && left.length === 0) {
-        return;
-      }
-
-      await announceRosterChange({ joined, left });
+      await upsertStatusEmbed();
     };
 
     const stream = startStatusStream({

@@ -59,6 +59,11 @@ module.exports = {
       sub
         .setName('status')
         .setDescription('Check the Minecraft server status')
+    )
+    .addSubcommand(sub =>
+      sub
+        .setName('players')
+        .setDescription('List online players')
     ),
 
   async execute(interaction) {
@@ -154,6 +159,48 @@ module.exports = {
           status: 'SUCCESS',
           action: 'server status',
           details: `Status: ${label}`,
+        });
+
+        return interaction.editReply({ content: message });
+      }
+
+      if (subcommand === 'players') {
+        console.log('Fetching online players via exaroton API...');
+        const response = await getServer();
+        if (response?.data?.error) {
+          const message = normalizeApiMessage(response, 'Failed to fetch players.');
+          console.log(`Failed to fetch players: ${message}`);
+          await logCommand(interaction, {
+            status: 'FAILURE',
+            action: 'server players',
+            details: message,
+          });
+          return interaction.editReply({ content: message });
+        }
+
+        const players = response?.data?.data?.players?.list || [];
+        const names = players
+          .map(player => {
+            if (typeof player === 'string') return player;
+            if (typeof player?.name === 'string') return player.name;
+            if (typeof player?.username === 'string') return player.username;
+            return null;
+          })
+          .filter(Boolean);
+        const uniqueNames = Array.from(new Set(names));
+
+        const message =
+          uniqueNames.length > 0
+            ? `Online players (${uniqueNames.length}): ${uniqueNames.join(', ')}`
+            : 'No players are currently online.';
+
+        console.log(
+          `Players online: ${uniqueNames.length}${uniqueNames.length ? ` (${uniqueNames.join(', ')})` : ''}`
+        );
+        await logCommand(interaction, {
+          status: 'SUCCESS',
+          action: 'server players',
+          details: `Players online: ${uniqueNames.length}`,
         });
 
         return interaction.editReply({ content: message });
