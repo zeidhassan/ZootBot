@@ -8,6 +8,7 @@ Discord bot for managing a Minecraft server on exaroton, with live chat relay an
 - WebSocket status stream with auto-reconnect and live chat relay
 - Status embed that updates in place
 - Role-based access control for sensitive commands
+- Player-facing `/help` command with a clear feature overview
 
 ## Requirements
 - Node.js (LTS recommended)
@@ -46,6 +47,7 @@ node index.js
 ## Commands (high level)
 - `/server start|stop|restart|status|players`
 - `/op add|remove`
+- `/help`
 - `/announce`
 - `/announcements subscribe|unsubscribe`
 - `/say`
@@ -61,7 +63,7 @@ Some commands require roles listed in `ALLOWED_ROLE_IDS` within the command file
 - Discord -> Minecraft: messages in that channel are sent to the server via the console stream.
 
 ## Status Embed
-The bot maintains a single status embed in `EXAROTON_STATUS_CHANNEL_ID`. It will create the embed if missing and update it as status events arrive.
+The bot maintains a single status embed in `EXAROTON_STATUS_CHANNEL_ID`. It will create the embed if missing and update it as status events arrive. The embed includes server status, address, player count, and player list.
 
 ## Logging
 - Console logs include command and event registration, plus useful debug output.
